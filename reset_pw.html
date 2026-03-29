@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Şifre Sıfırlama</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #09090b; color: white; }
+        .card { background: #18181b; padding: 2rem; border-radius: 1rem; border: 1px solid #27272a; text-align: center; }
+        button { background: #2563eb; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; font-weight: bold; }
+        button:hover { background: #1d4ed8; }
+        #status { margin-top: 1rem; font-size: 0.875rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Admin Şifresini Sıfırla</h2>
+        <p>Şifreyi <b>123456</b> olarak ayarlamak için butona tıklayın.</p>
+        <button id="resetBtn">Şifreyi 123456 Yap</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const btn = document.getElementById('resetBtn');
+        const status = document.getElementById('status');
+
+        btn.onclick = async () => {
+            status.innerText = 'Güncelleniyor...';
+            try {
+                const response = await fetch('https://smxadfujomneusxclqbu.supabase.co/rest/v1/app_settings?id=eq.cfe4dfc4-e5c8-42b7-a7e2-b845a5f77467', {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNteGFkZnVqb21uZXVzeGNscWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3NTIwNTEsImV4cCI6MjA4MDMyODA1MX0.KeiHyOyYvohm2VghXrTDLEEwKnra-uN6uPUWVgxvo6Y',
+                        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNteGFkZnVqb21uZXVzeGNscWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3NTIwNTEsImV4cCI6MjA4MDMyODA1MX0.KeiHyOyYvohm2VghXrTDLEEwKnra-uN6uPUWVgxvo6Y',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ admin_password: '123456' })
+                });
+
+                if (response.ok) {
+                    status.style.color = '#4ade80';
+                    status.innerText = 'Başarılı! Artık "123456" ile giriş yapabilirsiniz.';
+                } else {
+                    throw new Error('Hata oluştu');
+                }
+            } catch (err) {
+                status.style.color = '#f87171';
+                status.innerText = 'Hata: ' + err.message;
+            }
+        };
+    </script>
+</body>
+</html>

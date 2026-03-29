@@ -116,6 +116,7 @@ interface Employee {
   taxClass: 'SK 1' | 'SK 3' | 'SK 5';
   iban: string;
   salary_history?: SalaryHistoryItem[];
+  monthly_net_salary?: number;
 }
 
 interface WorkLog {
@@ -180,7 +181,8 @@ const mapEmployeeToApp = (e: any): Employee => {
         hourlyRate: Number(e.hourly_rate) || 0,
         taxClass: e.tax_class || 'SK 1',
         iban: e.iban || '',
-        salary_history: history
+        salary_history: history,
+        monthly_net_salary: Number(e.monthly_net_salary) || 0
     };
 };
 
@@ -392,6 +394,8 @@ const App: React.FC = () => {
   const [payrollDate, setPayrollDate] = useState(new Date());
   const [costsMonth, setCostsMonth] = useState<Date>(new Date());
   const [costsStatusFilter, setCostsStatusFilter] = useState<'all' | 'approved'>('approved');
+  const [editingSalaryEmpId, setEditingSalaryEmpId] = useState<string | null>(null);
+  const [editingSalaryValue, setEditingSalaryValue] = useState<string>('');
 
   const [officialPayrollHours, setOfficialPayrollHours] = useState<Record<string, number>>({});
 
@@ -667,6 +671,19 @@ const App: React.FC = () => {
       } catch (e) {
           console.error("Salary update failed", e);
           alert("Maaş güncellenemedi.");
+      }
+  };
+
+  const handleSaveMonthlyNetSalary = async (empId: string) => {
+      const val = parseFloat(editingSalaryValue);
+      if (isNaN(val) || val < 0) { alert("Geçerli bir değer giriniz."); return; }
+      try {
+          setEmployees(prev => prev.map(e => e.id === empId ? { ...e, monthly_net_salary: val } : e));
+          await updateEmployee(empId, { monthly_net_salary: val });
+          setEditingSalaryEmpId(null);
+      } catch (e) {
+          console.error("Monthly salary update failed", e);
+          alert("Aylık maaş güncellenemedi.");
       }
   };
 
@@ -1986,11 +2003,26 @@ const App: React.FC = () => {
                                 const rate = emp ? getHourlyRateForDate(emp, l.date) : 0;
                                 return { ...l, empName: emp?.name ?? 'Bilinmeyen', rate, cost: l.netHours * rate };
                             });
-                            const totalCost = logsWithCost.reduce((s, l) => s + l.cost, 0);
+                            const hourlyTotalCost = logsWithCost.reduce((s, l) => s + l.cost, 0);
                             const totalHours = logsWithCost.reduce((s, l) => s + l.netHours, 0);
                             const activeDays = new Set(logsWithCost.map(l => l.date));
-                            const avgCostPerDay = activeDays.size > 0 ? totalCost / activeDays.size : 0;
                             const activeLocations = new Set(logsWithCost.map(l => l.location).filter(Boolean));
+
+                            // Monthly salary employees (fixed monthly salary)
+                            const salariedEmps = employees.filter(e => (e.monthly_net_salary || 0) > 0);
+                            const totalMonthlySalaries = salariedEmps.reduce((s, e) => s + (e.monthly_net_salary || 0), 0);
+
+                            // Working days in the selected month (Mon-Fri)
+                            const daysInMonth = new Date(costsMonth.getFullYear(), costsMonth.getMonth() + 1, 0).getDate();
+                            let workingDaysInMonth = 0;
+                            for (let d = 1; d <= daysInMonth; d++) {
+                                const dow = new Date(costsMonth.getFullYear(), costsMonth.getMonth(), d).getDay();
+                                if (dow !== 0 && dow !== 6) workingDaysInMonth++;
+                            }
+                            const dailySalaryCost = workingDaysInMonth > 0 ? totalMonthlySalaries / workingDaysInMonth : 0;
+
+                            const totalCost = hourlyTotalCost + totalMonthlySalaries;
+                            const avgCostPerDay = activeDays.size > 0 ? (hourlyTotalCost / activeDays.size) + dailySalaryCost : 0;
 
                             const byDate: Record<string, typeof logsWithCost> = {};
                             logsWithCost.forEach(l => { if (!byDate[l.date]) byDate[l.date] = []; byDate[l.date].push(l); });
@@ -2005,13 +2037,25 @@ const App: React.FC = () => {
                             });
                             const sortedLocations = Object.entries(byLocation).sort((a, b) => b[1].cost - a[1].cost);
 
-                            const byEmployee: Record<string, { name: string; hours: number; cost: number; rate: number }> = {};
+                            // Hourly employees monthly average
+                            const byEmployee: Record<string, { name: string; hours: number; cost: number; rate: number; monthly_net_salary: number }> = {};
                             logsWithCost.forEach(l => {
-                                if (!byEmployee[l.employeeId]) byEmployee[l.employeeId] = { name: l.empName, hours: 0, cost: 0, rate: l.rate };
+                                const emp = employees.find(e => e.id === l.employeeId);
+                                if (!byEmployee[l.employeeId]) byEmployee[l.employeeId] = { name: l.empName, hours: 0, cost: 0, rate: l.rate, monthly_net_salary: emp?.monthly_net_salary || 0 };
                                 byEmployee[l.employeeId].hours += l.netHours;
                                 byEmployee[l.employeeId].cost += l.cost;
                             });
-                            const sortedEmployees = Object.entries(byEmployee).sort((a, b) => b[1].cost - a[1].cost);
+                            // Also add salaried employees who may not have hourly logs this month
+                            salariedEmps.forEach(e => {
+                                if (!byEmployee[e.id]) {
+                                    byEmployee[e.id] = { name: e.name, hours: 0, cost: 0, rate: e.hourlyRate, monthly_net_salary: e.monthly_net_salary || 0 };
+                                }
+                            });
+                            const sortedEmployees = Object.entries(byEmployee).sort((a, b) => {
+                                const totalA = a[1].cost + a[1].monthly_net_salary;
+                                const totalB = b[1].cost + b[1].monthly_net_salary;
+                                return totalB - totalA;
+                            });
 
                             return (
                                 <div className="space-y-6">
@@ -2047,7 +2091,7 @@ const App: React.FC = () => {
                                         <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-4">
                                             <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Toplam Maliyet</div>
                                             <div className="text-2xl font-mono font-bold text-emerald-400">{totalCost.toFixed(2)} €</div>
-                                            <div className="text-[10px] text-zinc-600 mt-1">{logsWithCost.length} kayıt</div>
+                                            <div className="text-[10px] text-zinc-600 mt-1">saat ({hourlyTotalCost.toFixed(0)}€) + maaş ({totalMonthlySalaries.toFixed(0)}€)</div>
                                         </div>
                                         <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-4">
                                             <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Toplam Saat</div>
@@ -2057,12 +2101,12 @@ const App: React.FC = () => {
                                         <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-4">
                                             <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Ort. Günlük Maliyet</div>
                                             <div className="text-2xl font-mono font-bold text-yellow-400">{avgCostPerDay.toFixed(2)} €</div>
-                                            <div className="text-[10px] text-zinc-600 mt-1">günlük ortalama</div>
+                                            <div className="text-[10px] text-zinc-600 mt-1">saatlik + maaş payı</div>
                                         </div>
                                         <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-4">
-                                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Aktif Lokasyon</div>
-                                            <div className="text-2xl font-mono font-bold text-purple-400">{activeLocations.size}</div>
-                                            <div className="text-[10px] text-zinc-600 mt-1">farklı iş yeri</div>
+                                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Aylık Sabit Maaş</div>
+                                            <div className="text-2xl font-mono font-bold text-pink-400">{totalMonthlySalaries.toFixed(2)} €</div>
+                                            <div className="text-[10px] text-zinc-600 mt-1">{salariedEmps.length} maaşlı personel · {activeLocations.size} lokasyon</div>
                                         </div>
                                     </div>
 
@@ -2105,7 +2149,8 @@ const App: React.FC = () => {
                                             ) : (
                                                 <div className="space-y-3">
                                                     {sortedEmployees.map(([empId, data]) => {
-                                                        const pct = totalCost > 0 ? (data.cost / totalCost) * 100 : 0;
+                                                        const empTotal = data.cost + data.monthly_net_salary;
+                                                        const pct = totalCost > 0 ? (empTotal / totalCost) * 100 : 0;
                                                         return (
                                                             <div key={empId}>
                                                                 <div className="flex justify-between items-center mb-1">
@@ -2113,12 +2158,17 @@ const App: React.FC = () => {
                                                                         <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center text-[10px] font-bold text-zinc-300">{data.name.charAt(0).toUpperCase()}</div>
                                                                         <div>
                                                                             <div className="text-sm text-zinc-200 font-medium leading-none">{data.name}</div>
-                                                                            <div className="text-[10px] text-zinc-600">{data.rate.toFixed(2)} €/s</div>
+                                                                            {data.monthly_net_salary > 0
+                                                                                ? <div className="text-[10px] text-pink-500">aylık {data.monthly_net_salary.toFixed(0)} € · {data.hours.toFixed(1)} s</div>
+                                                                                : <div className="text-[10px] text-zinc-600">{data.rate.toFixed(2)} €/s · {data.hours.toFixed(1)} s</div>
+                                                                            }
                                                                         </div>
                                                                     </div>
                                                                     <div className="text-right shrink-0">
-                                                                        <div className="text-emerald-400 font-mono font-bold text-sm">{data.cost.toFixed(2)} €</div>
-                                                                        <div className="text-[10px] text-zinc-500">{data.hours.toFixed(1)} saat</div>
+                                                                        <div className="text-emerald-400 font-mono font-bold text-sm">{empTotal.toFixed(2)} €</div>
+                                                                        {data.cost > 0 && data.monthly_net_salary > 0 && (
+                                                                            <div className="text-[10px] text-zinc-500">{data.cost.toFixed(0)}€ saat + {data.monthly_net_salary.toFixed(0)}€ maaş</div>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                                 <div className="w-full bg-zinc-800 rounded-full h-1.5">
@@ -2143,8 +2193,12 @@ const App: React.FC = () => {
                                             <div className="space-y-2">
                                                 {sortedDates.map(date => {
                                                     const dayLogs = byDate[date];
-                                                    const dayTotal = dayLogs.reduce((s, l) => s + l.cost, 0);
+                                                    const dayHourlyCost = dayLogs.reduce((s, l) => s + l.cost, 0);
                                                     const dayHours = dayLogs.reduce((s, l) => s + l.netHours, 0);
+                                                    // Add prorated daily salary cost (only for weekdays)
+                                                    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+                                                    const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
+                                                    const dayTotal = dayHourlyCost + (isWeekday ? dailySalaryCost : 0);
                                                     const dayDate = new Date(date + 'T00:00:00');
                                                     return (
                                                         <details key={date} className="group">
@@ -2182,6 +2236,21 @@ const App: React.FC = () => {
                                                                         </div>
                                                                     </div>
                                                                 ))}
+                                                                {isWeekday && salariedEmps.length > 0 && salariedEmps.map(e => (
+                                                                    <div key={`sal-${e.id}`} className="flex items-center justify-between text-sm py-1.5 border-b border-zinc-800/40 last:border-0">
+                                                                        <div className="flex items-center gap-3 min-w-0">
+                                                                            <div className="w-5 h-5 rounded-full bg-pink-900 flex items-center justify-center text-[9px] font-bold text-pink-300 shrink-0">{e.name.charAt(0).toUpperCase()}</div>
+                                                                            <div className="min-w-0">
+                                                                                <span className="text-zinc-300 font-medium">{e.name}</span>
+                                                                                <div className="text-[10px] text-zinc-600">Aylık maaş günlük payı ({workingDaysInMonth} iş günü)</div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="text-right shrink-0 ml-3">
+                                                                            <div className="text-pink-400 font-mono font-bold">{((e.monthly_net_salary || 0) / workingDaysInMonth).toFixed(2)} €</div>
+                                                                            <div className="text-[9px] text-pink-700">Sabit Maaş</div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
                                                             </div>
                                                         </details>
                                                     );
@@ -2189,6 +2258,85 @@ const App: React.FC = () => {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Salary Entry Table */}
+                                    {currentUser?.role === 'admin' && (
+                                        <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-5">
+                                            <h4 className="font-bold text-white mb-1 flex items-center gap-2 text-sm">
+                                                <span className="w-2 h-2 rounded-full bg-pink-500 inline-block"></span> Personel Maaş Tablosu
+                                            </h4>
+                                            <p className="text-[11px] text-zinc-500 mb-4">Saatlik çalışanlar için aylık ortalama gösterilir. Aylık net maaş girilmiş olanlar toplam maliyete dahil edilir.</p>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
+                                                            <th className="text-left pb-2">Personel</th>
+                                                            <th className="text-right pb-2">Saatlik Ücret</th>
+                                                            <th className="text-right pb-2">Bu Ay Saatlik Toplam</th>
+                                                            <th className="text-right pb-2">Aylık Net Maaş</th>
+                                                            <th className="text-right pb-2"></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-zinc-800/50">
+                                                        {employees.map(emp => {
+                                                            const empLogs = logsWithCost.filter(l => l.employeeId === emp.id);
+                                                            const empHourlyTotal = empLogs.reduce((s, l) => s + l.cost, 0);
+                                                            const empHours = empLogs.reduce((s, l) => s + l.netHours, 0);
+                                                            const isEditing = editingSalaryEmpId === emp.id;
+                                                            return (
+                                                                <tr key={emp.id} className="group">
+                                                                    <td className="py-2.5 pr-3">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center text-[10px] font-bold text-zinc-300">{emp.name.charAt(0).toUpperCase()}</div>
+                                                                            <span className="text-zinc-200 font-medium">{emp.name}</span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-2.5 text-right text-zinc-400 font-mono">{emp.hourlyRate > 0 ? `${emp.hourlyRate.toFixed(2)} €/s` : <span className="text-zinc-700">—</span>}</td>
+                                                                    <td className="py-2.5 text-right">
+                                                                        {empHourlyTotal > 0
+                                                                            ? <span className="text-emerald-400 font-mono">{empHourlyTotal.toFixed(2)} €<span className="text-zinc-600 text-[10px] ml-1">({empHours.toFixed(1)} s)</span></span>
+                                                                            : <span className="text-zinc-700">—</span>
+                                                                        }
+                                                                    </td>
+                                                                    <td className="py-2.5 text-right">
+                                                                        {isEditing ? (
+                                                                            <input
+                                                                                type="number"
+                                                                                min="0"
+                                                                                step="0.01"
+                                                                                className="bg-zinc-900 border border-pink-700 rounded px-2 py-1 text-white font-mono text-sm w-28 text-right"
+                                                                                value={editingSalaryValue}
+                                                                                onChange={e => setEditingSalaryValue(e.target.value)}
+                                                                                onKeyDown={e => { if (e.key === 'Enter') handleSaveMonthlyNetSalary(emp.id); if (e.key === 'Escape') setEditingSalaryEmpId(null); }}
+                                                                                autoFocus
+                                                                            />
+                                                                        ) : (
+                                                                            <span className={`font-mono ${(emp.monthly_net_salary || 0) > 0 ? 'text-pink-400 font-bold' : 'text-zinc-700'}`}>
+                                                                                {(emp.monthly_net_salary || 0) > 0 ? `${emp.monthly_net_salary!.toFixed(2)} €` : '—'}
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="py-2.5 text-right">
+                                                                        {isEditing ? (
+                                                                            <div className="flex items-center justify-end gap-1">
+                                                                                <button onClick={() => handleSaveMonthlyNetSalary(emp.id)} className="px-2 py-1 bg-pink-700 hover:bg-pink-600 text-white rounded text-xs">Kaydet</button>
+                                                                                <button onClick={() => setEditingSalaryEmpId(null)} className="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs">İptal</button>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <button
+                                                                                onClick={() => { setEditingSalaryEmpId(emp.id); setEditingSalaryValue(String(emp.monthly_net_salary || '')); }}
+                                                                                className="opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs"
+                                                                            >Düzenle</button>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })()}
