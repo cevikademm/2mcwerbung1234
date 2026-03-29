@@ -30,7 +30,10 @@ import {
   fetchLocations,
   upsertLocation,
   deleteLocation,
-  subscribeToLocations
+  subscribeToLocations,
+  subscribeToWorkLogs,
+  subscribeToEmployees,
+  subscribeToAdvances
 } from './services/supabaseClient';
 import { 
   UsersIcon, 
@@ -519,7 +522,43 @@ const App: React.FC = () => {
             setLocations(prev => prev.filter(l => l.id !== payload.old.id));
         }
     });
-    return () => { locChannel.unsubscribe(); };
+
+    const empChannel = subscribeToEmployees((payload) => {
+        if (payload.eventType === 'INSERT') {
+            setEmployees(prev => [...prev, mapEmployeeToApp(payload.new)]);
+        } else if (payload.eventType === 'UPDATE') {
+            setEmployees(prev => prev.map(e => e.id === payload.new.id ? mapEmployeeToApp(payload.new) : e));
+        } else if (payload.eventType === 'DELETE') {
+            setEmployees(prev => prev.filter(e => e.id !== payload.old.id));
+        }
+    });
+
+    const logChannel = subscribeToWorkLogs((payload) => {
+        if (payload.eventType === 'INSERT') {
+            setWorkLogs(prev => [mapWorkLogToApp(payload.new), ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+            setWorkLogs(prev => prev.map(l => l.id === payload.new.id ? mapWorkLogToApp(payload.new) : l));
+        } else if (payload.eventType === 'DELETE') {
+            setWorkLogs(prev => prev.filter(l => l.id !== payload.old.id));
+        }
+    });
+
+    const advChannel = subscribeToAdvances((payload) => {
+        if (payload.eventType === 'INSERT') {
+            setAdvances(prev => [mapAdvanceToApp(payload.new), ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+            setAdvances(prev => prev.map(a => a.id === payload.new.id ? mapAdvanceToApp(payload.new) : a));
+        } else if (payload.eventType === 'DELETE') {
+            setAdvances(prev => prev.filter(a => a.id !== payload.old.id));
+        }
+    });
+
+    return () => {
+        locChannel.unsubscribe();
+        empChannel.unsubscribe();
+        logChannel.unsubscribe();
+        advChannel.unsubscribe();
+    };
   }, [currentUser]);
 
   // --- AUTH LOGIC ---
@@ -2097,14 +2136,20 @@ const App: React.FC = () => {
                                                                                      {logsByMonth[monthKey].map(log => (
                                                                                          <div key={log.id} className="flex justify-between items-center text-xs bg-black/20 p-2 rounded border border-zinc-800/30 hover:border-zinc-700 transition-colors group">
                                                                                              <div className="flex flex-col gap-1">
-                                                                                                 <span className="text-zinc-500 font-mono text-[10px]">{log.date}</span>
+                                                                                                 <div className="flex items-center gap-2 flex-wrap">
+                                                                                                     <span className="text-zinc-500 font-mono text-[10px]">{log.date}</span>
+                                                                                                     {log.location && (
+                                                                                                         <span className="text-[10px] bg-purple-900/40 text-purple-300 border border-purple-800/50 px-1.5 py-0.5 rounded-full font-medium">
+                                                                                                             📍 {log.location}
+                                                                                                         </span>
+                                                                                                     )}
+                                                                                                 </div>
                                                                                                  <span className="text-zinc-500 text-[9px] flex items-center gap-1 font-mono">
-                                                                                                     <ClockIcon className="w-3 h-3 text-zinc-600"/> 
-                                                                                                     {log.startTime} - {log.endTime} 
-                                                                                                     <span className="text-zinc-700">|</span> 
+                                                                                                     <ClockIcon className="w-3 h-3 text-zinc-600"/>
+                                                                                                     {log.startTime} - {log.endTime}
+                                                                                                     <span className="text-zinc-700">|</span>
                                                                                                      Mola: {log.breakMinutes}dk
                                                                                                  </span>
-                                                                                                 {log.location && <span className="text-zinc-500 text-[9px]">📍 {log.location}</span>}
                                                                                                  <span className="text-zinc-300 font-medium">{log.description || 'Çalışma'}</span>
                                                                                              </div>
                                                                                              <div className="flex items-center gap-3">
