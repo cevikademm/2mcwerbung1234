@@ -1,23 +1,7 @@
 name: 🚀 Deploy to Vercel
 
 on:
-  # Manuel tetikleme (Claude dispatch / GitHub UI)
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deploy ortamı seç'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - preview
-      reason:
-        description: 'Deploy nedeni (isteğe bağlı)'
-        required: false
-        default: 'Manuel deploy'
-
-  # Her main push'unda otomatik
   push:
     branches:
       - main
@@ -37,32 +21,23 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
-      - name: 📦 Bağımlılıkları yükle
-        run: npm ci
-
-      - name: 🔨 Projeyi derle
-        run: npm run build
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-
       - name: 🌐 Vercel CLI kur
         run: npm install -g vercel@latest
 
+      - name: 📋 Vercel proje ayarlarını çek
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: 🔨 Vercel ile derle
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
       - name: 🚀 Production'a deploy et
-        if: github.event.inputs.environment == 'production' || github.event_name == 'push'
-        run: vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: 🔍 Preview'a deploy et
-        if: github.event.inputs.environment == 'preview'
-        run: vercel --token=${{ secrets.VERCEL_TOKEN }} --yes
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: ✅ Deploy tamamlandı
-        run: echo "Deploy başarılı! Ortam -> ${{ github.event.inputs.environment || 'production' }}"
