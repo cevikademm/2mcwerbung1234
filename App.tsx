@@ -25,7 +25,11 @@ import {
   deleteCalendarEvent,
   fetchAdvances,
   saveAdvance,
-  deleteAdvance
+  deleteAdvance,
+  fetchLocations,
+  upsertLocation,
+  deleteLocation,
+  subscribeToLocations
 } from './services/supabaseClient';
 import { 
   UsersIcon, 
@@ -389,6 +393,7 @@ const App: React.FC = () => {
   
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
   const [selectedSalaryDate, setSelectedSalaryDate] = useState(new Date());
   const [payrollDate, setPayrollDate] = useState(new Date());
@@ -396,6 +401,8 @@ const App: React.FC = () => {
   const [costsStatusFilter, setCostsStatusFilter] = useState<'all' | 'approved'>('approved');
   const [editingSalaryEmpId, setEditingSalaryEmpId] = useState<string | null>(null);
   const [editingSalaryValue, setEditingSalaryValue] = useState<string>('');
+  const [locationSearch, setLocationSearch] = useState('');
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
 
   const [officialPayrollHours, setOfficialPayrollHours] = useState<Record<string, number>>({});
 
@@ -480,22 +487,33 @@ const App: React.FC = () => {
     if (!currentUser) return;
     
     const loadData = async () => {
-        const [emps, logs, advs, tsks, evts] = await Promise.all([
+        const [emps, logs, advs, tsks, evts, locs] = await Promise.all([
             fetchEmployees(),
             fetchWorkLogs(),
             fetchAdvances(),
             fetchTasks(),
-            fetchCalendarEvents()
+            fetchCalendarEvents(),
+            fetchLocations()
         ]);
-        
+
         setEmployees(emps.map(mapEmployeeToApp));
         setWorkLogs(logs.map(mapWorkLogToApp));
         setAdvances(advs.map(mapAdvanceToApp));
         setTasks(tsks.map(mapTaskToApp));
         setCalendarEvents(evts.map(mapCalendarEventToApp));
+        setLocations(locs);
     };
-    
+
     loadData();
+
+    const locChannel = subscribeToLocations((payload) => {
+        if (payload.eventType === 'INSERT') {
+            setLocations(prev => [...prev, payload.new].sort((a, b) => a.name.localeCompare(b.name)));
+        } else if (payload.eventType === 'DELETE') {
+            setLocations(prev => prev.filter(l => l.id !== payload.old.id));
+        }
+    });
+    return () => { locChannel.unsubscribe(); };
   }, [currentUser]);
 
   // --- AUTH LOGIC ---
@@ -704,6 +722,15 @@ const App: React.FC = () => {
               };
 
               await saveWorkLog(logData);
+              // Auto-save location to shared locations list
+              if (hourEntry.location.trim()) {
+                  await upsertLocation(hourEntry.location.trim());
+                  setLocations(prev => {
+                      const name = hourEntry.location.trim();
+                      if (prev.some(l => l.name.toLowerCase() === name.toLowerCase())) return prev;
+                      return [...prev, { id: name, name }].sort((a, b) => a.name.localeCompare(b.name));
+                  });
+              }
               setHourEntry(prev => ({...prev, location: '', description: ''}));
               
               if (currentUser?.role === 'employee') {
@@ -1421,6 +1448,67 @@ const App: React.FC = () => {
 
                         {currentUser.role === 'admin' && (
                             <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-6">
+                                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span> Çalışma Yerleri
+                                </h3>
+                                <p className="text-xs text-zinc-500 mb-4">Tüm personelin kullandığı ortak proje/iş yeri listesi. Buradan ekleyip silebilirsiniz.</p>
+                                <div className="space-y-3">
+                                    <div className="flex gap-2">
+                                        <input
+                                            id="new-location-input"
+                                            className="flex-1 bg-zinc-900 border border-zinc-700 rounded p-2 text-white text-sm"
+                                            placeholder="Yeni çalışma yeri adı..."
+                                            onKeyDown={async (e) => {
+                                                if (e.key === 'Enter') {
+                                                    const val = (e.target as HTMLInputElement).value.trim();
+                                                    if (!val) return;
+                                                    await upsertLocation(val);
+                                                    setLocations(prev => {
+                                                        if (prev.some(l => l.name.toLowerCase() === val.toLowerCase())) return prev;
+                                                        return [...prev, { id: val, name: val }].sort((a, b) => a.name.localeCompare(b.name));
+                                                    });
+                                                    (e.target as HTMLInputElement).value = '';
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            onClick={async () => {
+                                                const input = document.getElementById('new-location-input') as HTMLInputElement;
+                                                const val = input?.value.trim();
+                                                if (!val) return;
+                                                await upsertLocation(val);
+                                                setLocations(prev => {
+                                                    if (prev.some(l => l.name.toLowerCase() === val.toLowerCase())) return prev;
+                                                    return [...prev, { id: val, name: val }].sort((a, b) => a.name.localeCompare(b.name));
+                                                });
+                                                if (input) input.value = '';
+                                            }}
+                                            className="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded text-sm font-bold"
+                                        >Ekle</button>
+                                    </div>
+                                    {locations.length === 0 ? (
+                                        <p className="text-zinc-600 text-sm text-center py-4">Henüz kayıtlı çalışma yeri yok.</p>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                            {locations.map(loc => (
+                                                <div key={loc.id} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-full px-3 py-1">
+                                                    <span className="text-sm text-zinc-200">{loc.name}</span>
+                                                    <button
+                                                        onClick={async () => {
+                                                            await deleteLocation(loc.id);
+                                                            setLocations(prev => prev.filter(l => l.id !== loc.id));
+                                                        }}
+                                                        className="text-zinc-600 hover:text-red-400 ml-1 transition-colors"
+                                                    ><XMarkIcon className="w-3.5 h-3.5"/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        {currentUser.role === 'admin' && (
+                            <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-6">
                                 <h3 className="text-lg font-bold mb-4">Uygulama Bilgisi</h3>
                                 <div className="text-sm text-zinc-500 space-y-2">
                                     <p>Sürüm: 1.0.0 (Beta)</p>
@@ -1849,12 +1937,65 @@ const App: React.FC = () => {
                                                 </div>
                                                 <div>
                                                     <label className="text-xs text-zinc-400 block mb-1">Çalışma Yeri</label>
-                                                    <input
-                                                        className="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white"
-                                                        placeholder="Ör: Maide, Restaurant XY..."
-                                                        value={hourEntry.location}
-                                                        onChange={e => setHourEntry({...hourEntry, location: e.target.value})}
-                                                    />
+                                                    <div className="relative">
+                                                        <input
+                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white"
+                                                            placeholder="Seçin veya yeni yer yazın..."
+                                                            value={hourEntry.location}
+                                                            onChange={e => {
+                                                                setHourEntry({...hourEntry, location: e.target.value});
+                                                                setLocationSearch(e.target.value);
+                                                                setShowLocationDropdown(true);
+                                                            }}
+                                                            onFocus={() => setShowLocationDropdown(true)}
+                                                            onBlur={() => setTimeout(() => setShowLocationDropdown(false), 150)}
+                                                        />
+                                                        {showLocationDropdown && (
+                                                            <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                                                {locations
+                                                                    .filter(l => !locationSearch || l.name.toLowerCase().includes(locationSearch.toLowerCase()))
+                                                                    .map(l => (
+                                                                        <button
+                                                                            key={l.id}
+                                                                            type="button"
+                                                                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 flex items-center gap-2"
+                                                                            onMouseDown={() => {
+                                                                                setHourEntry({...hourEntry, location: l.name});
+                                                                                setShowLocationDropdown(false);
+                                                                                setLocationSearch('');
+                                                                            }}
+                                                                        >
+                                                                            <span className="w-2 h-2 rounded-full bg-purple-500 inline-block shrink-0"></span>
+                                                                            {l.name}
+                                                                        </button>
+                                                                    ))
+                                                                }
+                                                                {locationSearch && !locations.some(l => l.name.toLowerCase() === locationSearch.toLowerCase()) && (
+                                                                    <div className="px-3 py-2 text-xs text-zinc-500 italic border-t border-zinc-800">
+                                                                        "{locationSearch}" — kaydetmek için Kaydet'e bas
+                                                                    </div>
+                                                                )}
+                                                                {locations.length === 0 && !locationSearch && (
+                                                                    <div className="px-3 py-2 text-xs text-zinc-600">Henüz kayıtlı yer yok. Yeni yer yazabilirsiniz.</div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {/* Quick chips */}
+                                                    {locations.length > 0 && !hourEntry.location && (
+                                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                                            {locations.slice(0, 8).map(l => (
+                                                                <button
+                                                                    key={l.id}
+                                                                    type="button"
+                                                                    onClick={() => setHourEntry({...hourEntry, location: l.name})}
+                                                                    className="text-xs bg-zinc-800 hover:bg-purple-900/50 border border-zinc-700 hover:border-purple-600 text-zinc-300 hover:text-purple-300 px-2 py-1 rounded-full transition-colors"
+                                                                >
+                                                                    {l.name}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div>
                                                     <label className="text-xs text-zinc-400 block mb-1">Açıklama</label>

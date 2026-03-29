@@ -346,6 +346,35 @@ export function subscribeToAccounts(onEvent: (payload: any) => void): RealtimeCh
 }
 
 
+// --- LOCATIONS (ÇALIŞMA YERLERİ) ---
+
+export async function fetchLocations(): Promise<{ id: string; name: string }[]> {
+    try {
+        const { data, error } = await supabase.from('locations').select('id, name').order('name', { ascending: true });
+        if (error) return [];
+        return data || [];
+    } catch { return []; }
+}
+
+export async function upsertLocation(name: string): Promise<void> {
+    try {
+        await supabase.from('locations').upsert({ name: name.trim() }, { onConflict: 'name' });
+    } catch { /* non-critical */ }
+}
+
+export async function deleteLocation(id: string): Promise<void> {
+    await supabase.from('locations').delete().eq('id', id);
+}
+
+export function subscribeToLocations(onEvent: (payload: any) => void): import('@supabase/supabase-js').RealtimeChannel {
+    const channelName = 'room:locations';
+    const existing = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`);
+    if (existing) supabase.removeChannel(existing);
+    return supabase.channel(channelName)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, onEvent)
+        .subscribe();
+}
+
 // --- EMPLOYEES (PERSONEL) ---
 
 export async function fetchEmployees() {
