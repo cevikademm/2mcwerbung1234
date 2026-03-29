@@ -2140,7 +2140,7 @@ const App: React.FC = () => {
                                                                                              <div className="flex flex-col gap-1 min-w-0 flex-1 mr-3">
                                                                                                  <div className="flex items-center gap-2 flex-wrap">
                                                                                                      <span className="text-zinc-500 font-mono text-[10px]">{log.date}</span>
-                                                                                                     {/* Inline location editor */}
+                                                                                                     {/* Inline location editor — only badge shown inline, add-button below */}
                                                                                                      {inlineLocLogId === log.id ? (
                                                                                                          <div className="relative flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                                                                                              <input
@@ -2186,15 +2186,7 @@ const App: React.FC = () => {
                                                                                                          >
                                                                                                              📍 {log.location}
                                                                                                          </button>
-                                                                                                     ) : (
-                                                                                                         <button
-                                                                                                             onClick={() => { setInlineLocLogId(log.id); setInlineLocValue(''); }}
-                                                                                                             className="text-[10px] text-zinc-600 hover:text-purple-400 border border-dashed border-zinc-700 hover:border-purple-600 px-1.5 py-0.5 rounded-full transition-colors flex items-center gap-0.5"
-                                                                                                             title="Çalışma yeri ekle"
-                                                                                                         >
-                                                                                                             <PlusIcon className="w-2.5 h-2.5"/> Yer ekle
-                                                                                                         </button>
-                                                                                                     )}
+                                                                                                     ) : null}
                                                                                                  </div>
                                                                                                  <span className="text-zinc-500 text-[9px] flex items-center gap-1 font-mono">
                                                                                                      <ClockIcon className="w-3 h-3 text-zinc-600"/>
@@ -2203,6 +2195,14 @@ const App: React.FC = () => {
                                                                                                      Mola: {log.breakMinutes}dk
                                                                                                  </span>
                                                                                                  <span className="text-zinc-300 font-medium">{log.description || 'Çalışma'}</span>
+                                                                                                 {!log.location && inlineLocLogId !== log.id && (
+                                                                                                     <button
+                                                                                                         onClick={() => { setInlineLocLogId(log.id); setInlineLocValue(''); }}
+                                                                                                         className="self-center text-xs text-zinc-400 hover:text-purple-300 border border-dashed border-zinc-600 hover:border-purple-500 bg-zinc-900/60 hover:bg-purple-900/20 px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 mt-1"
+                                                                                                     >
+                                                                                                         <PlusIcon className="w-3.5 h-3.5"/> Çalışma Yeri Ekle
+                                                                                                     </button>
+                                                                                                 )}
                                                                                              </div>
                                                                                              <div className="flex items-center gap-3">
                                                                                                  <span className="font-bold text-blue-400 font-mono text-sm">{log.netHours}s</span>
