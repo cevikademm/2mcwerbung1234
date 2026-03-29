@@ -407,6 +407,8 @@ const App: React.FC = () => {
   const [editingSalaryValue, setEditingSalaryValue] = useState<string>('');
   const [locationSearch, setLocationSearch] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [inlineLocLogId, setInlineLocLogId] = useState<string | null>(null);
+  const [inlineLocValue, setInlineLocValue] = useState('');
   // Records tab state
   const [recordsMonth, setRecordsMonth] = useState<Date>(new Date());
   const [recordsEmpFilter, setRecordsEmpFilter] = useState<string>('all');
@@ -2134,14 +2136,64 @@ const App: React.FC = () => {
                                                                              {isExpanded && (
                                                                                  <div className="space-y-1 pl-1 animate-fadeIn">
                                                                                      {logsByMonth[monthKey].map(log => (
-                                                                                         <div key={log.id} className="flex justify-between items-center text-xs bg-black/20 p-2 rounded border border-zinc-800/30 hover:border-zinc-700 transition-colors group">
-                                                                                             <div className="flex flex-col gap-1">
+                                                                                         <div key={log.id} className="flex justify-between items-start text-xs bg-black/20 p-2 rounded border border-zinc-800/30 hover:border-zinc-700 transition-colors group">
+                                                                                             <div className="flex flex-col gap-1 min-w-0 flex-1 mr-3">
                                                                                                  <div className="flex items-center gap-2 flex-wrap">
                                                                                                      <span className="text-zinc-500 font-mono text-[10px]">{log.date}</span>
-                                                                                                     {log.location && (
-                                                                                                         <span className="text-[10px] bg-purple-900/40 text-purple-300 border border-purple-800/50 px-1.5 py-0.5 rounded-full font-medium">
+                                                                                                     {/* Inline location editor */}
+                                                                                                     {inlineLocLogId === log.id ? (
+                                                                                                         <div className="relative flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                                                                             <input
+                                                                                                                 autoFocus
+                                                                                                                 className="text-[10px] bg-zinc-800 border border-purple-600 rounded-full px-2 py-0.5 text-white w-32 outline-none"
+                                                                                                                 list={`iloc-${log.id}`}
+                                                                                                                 value={inlineLocValue}
+                                                                                                                 placeholder="İş yeri..."
+                                                                                                                 onChange={e => setInlineLocValue(e.target.value)}
+                                                                                                                 onKeyDown={async (e) => {
+                                                                                                                     if (e.key === 'Enter') {
+                                                                                                                         const val = inlineLocValue.trim();
+                                                                                                                         await updateWorkLog(log.id, { location: val });
+                                                                                                                         if (val) {
+                                                                                                                             await upsertLocation(val);
+                                                                                                                             setLocations(prev => prev.some(l => l.name.toLowerCase() === val.toLowerCase()) ? prev : [...prev, { id: val, name: val }].sort((a,b) => a.name.localeCompare(b.name)));
+                                                                                                                         }
+                                                                                                                         setWorkLogs(prev => prev.map(l => l.id === log.id ? { ...l, location: val } : l));
+                                                                                                                         setInlineLocLogId(null);
+                                                                                                                     }
+                                                                                                                     if (e.key === 'Escape') setInlineLocLogId(null);
+                                                                                                                 }}
+                                                                                                                 onBlur={async () => {
+                                                                                                                     const val = inlineLocValue.trim();
+                                                                                                                     await updateWorkLog(log.id, { location: val });
+                                                                                                                     if (val) {
+                                                                                                                         await upsertLocation(val);
+                                                                                                                         setLocations(prev => prev.some(l => l.name.toLowerCase() === val.toLowerCase()) ? prev : [...prev, { id: val, name: val }].sort((a,b) => a.name.localeCompare(b.name)));
+                                                                                                                     }
+                                                                                                                     setWorkLogs(prev => prev.map(l => l.id === log.id ? { ...l, location: val } : l));
+                                                                                                                     setInlineLocLogId(null);
+                                                                                                                 }}
+                                                                                                             />
+                                                                                                             <datalist id={`iloc-${log.id}`}>
+                                                                                                                 {locations.map(l => <option key={l.id} value={l.name}/>)}
+                                                                                                             </datalist>
+                                                                                                         </div>
+                                                                                                     ) : log.location ? (
+                                                                                                         <button
+                                                                                                             onClick={() => { setInlineLocLogId(log.id); setInlineLocValue(log.location || ''); }}
+                                                                                                             className="text-[10px] bg-purple-900/40 text-purple-300 border border-purple-800/50 px-1.5 py-0.5 rounded-full font-medium hover:bg-purple-800/60 transition-colors"
+                                                                                                             title="Düzenle"
+                                                                                                         >
                                                                                                              📍 {log.location}
-                                                                                                         </span>
+                                                                                                         </button>
+                                                                                                     ) : (
+                                                                                                         <button
+                                                                                                             onClick={() => { setInlineLocLogId(log.id); setInlineLocValue(''); }}
+                                                                                                             className="text-[10px] text-zinc-600 hover:text-purple-400 border border-dashed border-zinc-700 hover:border-purple-600 px-1.5 py-0.5 rounded-full transition-colors flex items-center gap-0.5"
+                                                                                                             title="Çalışma yeri ekle"
+                                                                                                         >
+                                                                                                             <PlusIcon className="w-2.5 h-2.5"/> Yer ekle
+                                                                                                         </button>
                                                                                                      )}
                                                                                                  </div>
                                                                                                  <span className="text-zinc-500 text-[9px] flex items-center gap-1 font-mono">
