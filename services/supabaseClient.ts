@@ -497,6 +497,20 @@ export async function saveWorkLog(log: any) {
   }
 }
 
+export async function updateWorkLog(id: string, updates: Partial<{ date: string; start_time: string; end_time: string; break_minutes: number; net_hours: number; location: string; description: string; employee_id: string }>) {
+    try {
+        const { error } = await supabase.from('work_logs').update(updates).eq('id', id);
+        if (error) {
+            await logAction('UPDATE', 'WorkLogs', { id, updates }, 'FAILURE', error.message);
+            throw error;
+        }
+        await logAction('UPDATE', 'WorkLogs', { id, updates }, 'SUCCESS');
+    } catch (e: any) {
+        await logAction('ERROR', 'WorkLogs', { id }, 'FAILURE', e.message);
+        throw e;
+    }
+}
+
 export async function updateWorkLogStatus(id: string, status: 'approved' | 'rejected') {
   try {
       const { data, error } = await supabase

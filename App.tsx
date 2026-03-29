@@ -26,6 +26,7 @@ import {
   fetchAdvances,
   saveAdvance,
   deleteAdvance,
+  updateWorkLog,
   fetchLocations,
   upsertLocation,
   deleteLocation,
@@ -58,7 +59,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 type ViewType = 'panel' | 'salary' | 'settings' | 'tasks' | 'calendar' | 'messages';
-type SalaryTab = 'employees' | 'hours' | 'payroll' | 'costs';
+type SalaryTab = 'employees' | 'hours' | 'payroll' | 'costs' | 'records';
 type UserRole = 'admin' | 'employee';
 
 // --- MESSAGING INTERFACES ---
@@ -403,6 +404,11 @@ const App: React.FC = () => {
   const [editingSalaryValue, setEditingSalaryValue] = useState<string>('');
   const [locationSearch, setLocationSearch] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  // Records tab state
+  const [recordsMonth, setRecordsMonth] = useState<Date>(new Date());
+  const [recordsEmpFilter, setRecordsEmpFilter] = useState<string>('all');
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editingLogField, setEditingLogField] = useState<Record<string, string>>({});
 
   const [officialPayrollHours, setOfficialPayrollHours] = useState<Record<string, number>>({});
 
@@ -1769,6 +1775,12 @@ const App: React.FC = () => {
                                 >
                                     <div className="flex items-center gap-2"><ArrowTrendingUpIcon className="w-4 h-4"/> Maliyet Analizi</div>
                                 </button>
+                                <button
+                                    onClick={() => setActiveSalaryTab('records')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeSalaryTab === 'records' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                >
+                                    <div className="flex items-center gap-2"><PencilSquareIcon className="w-4 h-4"/> Kayıt Düzenle</div>
+                                </button>
                             </div>
                         </div>
 
@@ -2678,9 +2690,247 @@ const App: React.FC = () => {
                                  </div>
                              </div>
                         )}
+
+                        {/* 5. RECORDS EDIT TAB */}
+                        {activeSalaryTab === 'records' && currentUser?.role === 'admin' && (() => {
+                            const recMonthStr = `${recordsMonth.getFullYear()}-${(recordsMonth.getMonth()+1).toString().padStart(2,'0')}`;
+                            const allLogs = workLogs
+                                .filter(l => l.date.startsWith(recMonthStr) && (recordsEmpFilter === 'all' || l.employeeId === recordsEmpFilter))
+                                .sort((a,b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime));
+
+                            // Location performance: cost & hours per location (all time)
+                            const byLoc: Record<string, { hours: number; cost: number; days: Set<string>; emps: Set<string> }> = {};
+                            workLogs.forEach(l => {
+                                const loc = (l.location || '').trim() || '(Belirtilmemiş)';
+                                const emp = employees.find(e => e.id === l.employeeId);
+                                const rate = emp ? getHourlyRateForDate(emp, l.date) : 0;
+                                if (!byLoc[loc]) byLoc[loc] = { hours: 0, cost: 0, days: new Set(), emps: new Set() };
+                                byLoc[loc].hours += l.netHours;
+                                byLoc[loc].cost += l.netHours * rate;
+                                byLoc[loc].days.add(l.date);
+                                byLoc[loc].emps.add(l.employeeId);
+                            });
+                            const locPerf = Object.entries(byLoc)
+                                .map(([name, d]) => ({ name, hours: d.hours, cost: d.cost, days: d.days.size, emps: d.emps.size, avgPerDay: d.days.size > 0 ? d.cost / d.days.size : 0 }))
+                                .sort((a,b) => b.cost - a.cost);
+                            const maxCost = locPerf[0]?.cost || 1;
+
+                            return (
+                                <div className="space-y-6">
+                                    {/* Location Performance Analysis */}
+                                    <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-5">
+                                        <h3 className="font-bold text-white mb-1 flex items-center gap-2">
+                                            <ArrowTrendingUpIcon className="w-5 h-5 text-emerald-400"/> İş Yeri Fiyat & Performans Analizi
+                                        </h3>
+                                        <p className="text-xs text-zinc-500 mb-4">Tüm zamanlara ait kayıtlar. Çalışma yeri boş olan kayıtlar "(Belirtilmemiş)" olarak gösterilir.</p>
+                                        {locPerf.length === 0 ? (
+                                            <p className="text-zinc-600 text-sm text-center py-6">Kayıt yok.</p>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
+                                                            <th className="text-left pb-2 pr-4">İş Yeri</th>
+                                                            <th className="text-right pb-2 pr-4">Toplam Saat</th>
+                                                            <th className="text-right pb-2 pr-4">Toplam Maliyet</th>
+                                                            <th className="text-right pb-2 pr-4">Ort. Günlük</th>
+                                                            <th className="text-right pb-2 pr-4">Gün</th>
+                                                            <th className="text-right pb-2">Personel</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-zinc-800/50">
+                                                        {locPerf.map(loc => (
+                                                            <tr key={loc.name} className="group">
+                                                                <td className="py-2.5 pr-4">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="flex-1">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className={`font-medium ${loc.name === '(Belirtilmemiş)' ? 'text-zinc-600 italic' : 'text-zinc-200'}`}>{loc.name}</span>
+                                                                            </div>
+                                                                            <div className="mt-1 w-32 bg-zinc-800 rounded-full h-1">
+                                                                                <div className="bg-emerald-500 h-1 rounded-full" style={{ width: `${(loc.cost / maxCost * 100).toFixed(1)}%` }}/>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="py-2.5 pr-4 text-right font-mono text-blue-400">{loc.hours.toFixed(1)} s</td>
+                                                                <td className="py-2.5 pr-4 text-right font-mono font-bold text-emerald-400">{loc.cost.toFixed(2)} €</td>
+                                                                <td className="py-2.5 pr-4 text-right font-mono text-yellow-400">{loc.avgPerDay.toFixed(2)} €</td>
+                                                                <td className="py-2.5 pr-4 text-right text-zinc-400">{loc.days}</td>
+                                                                <td className="py-2.5 text-right text-zinc-400">{loc.emps}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Editable Records Table */}
+                                    <div className="bg-[#0e0e11] border border-zinc-800 rounded-xl p-5">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                                            <div>
+                                                <h3 className="font-bold text-white flex items-center gap-2"><PencilSquareIcon className="w-4 h-4 text-blue-400"/> Kayıt Düzenle</h3>
+                                                <p className="text-xs text-zinc-500 mt-0.5">Herhangi bir alana tıklayarak düzenleyin. Çalışma yeri boş olanları doldurun.</p>
+                                            </div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1">
+                                                    <button onClick={() => setRecordsMonth(new Date(recordsMonth.getFullYear(), recordsMonth.getMonth()-1, 1))} className="p-1 hover:bg-zinc-800 rounded text-zinc-400"><ChevronDownIcon className="w-4 h-4 rotate-90"/></button>
+                                                    <span className="text-sm font-mono text-white w-32 text-center">{recordsMonth.toLocaleString('tr-TR', { month: 'long', year: 'numeric' })}</span>
+                                                    <button onClick={() => setRecordsMonth(new Date(recordsMonth.getFullYear(), recordsMonth.getMonth()+1, 1))} className="p-1 hover:bg-zinc-800 rounded text-zinc-400"><ChevronRightIcon className="w-4 h-4"/></button>
+                                                </div>
+                                                <select
+                                                    className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white text-sm"
+                                                    value={recordsEmpFilter}
+                                                    onChange={e => setRecordsEmpFilter(e.target.value)}
+                                                >
+                                                    <option value="all">Tüm Personel</option>
+                                                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {allLogs.length === 0 ? (
+                                            <p className="text-zinc-600 text-sm text-center py-6">Bu ay için kayıt yok.</p>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm min-w-[700px]">
+                                                    <thead>
+                                                        <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
+                                                            <th className="text-left pb-2 pr-3">Tarih</th>
+                                                            <th className="text-left pb-2 pr-3">Personel</th>
+                                                            <th className="text-left pb-2 pr-3">Saat</th>
+                                                            <th className="text-left pb-2 pr-3">Net Saat</th>
+                                                            <th className="text-left pb-2 pr-3">Çalışma Yeri</th>
+                                                            <th className="text-left pb-2">Açıklama</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-zinc-800/40">
+                                                        {allLogs.map(log => {
+                                                            const isEditing = editingLogId === log.id;
+                                                            const emp = employees.find(e => e.id === log.employeeId);
+                                                            const hasLocation = log.location?.trim();
+
+                                                            const startEdit = () => {
+                                                                setEditingLogId(log.id);
+                                                                setEditingLogField({
+                                                                    date: log.date,
+                                                                    startTime: log.startTime,
+                                                                    endTime: log.endTime,
+                                                                    location: log.location || '',
+                                                                    description: log.description || ''
+                                                                });
+                                                            };
+
+                                                            const saveEdit = async () => {
+                                                                try {
+                                                                    await updateWorkLog(log.id, {
+                                                                        date: editingLogField.date,
+                                                                        start_time: editingLogField.startTime,
+                                                                        end_time: editingLogField.endTime,
+                                                                        location: editingLogField.location,
+                                                                        description: editingLogField.description
+                                                                    });
+                                                                    // Auto-save location
+                                                                    if (editingLogField.location.trim()) {
+                                                                        await upsertLocation(editingLogField.location.trim());
+                                                                        setLocations(prev => {
+                                                                            const n = editingLogField.location.trim();
+                                                                            if (prev.some(l => l.name.toLowerCase() === n.toLowerCase())) return prev;
+                                                                            return [...prev, { id: n, name: n }].sort((a,b) => a.name.localeCompare(b.name));
+                                                                        });
+                                                                    }
+                                                                    setWorkLogs(prev => prev.map(l => l.id === log.id ? {
+                                                                        ...l,
+                                                                        date: editingLogField.date,
+                                                                        startTime: editingLogField.startTime,
+                                                                        endTime: editingLogField.endTime,
+                                                                        location: editingLogField.location,
+                                                                        description: editingLogField.description
+                                                                    } : l));
+                                                                    setEditingLogId(null);
+                                                                } catch { alert('Kayıt güncellenemedi.'); }
+                                                            };
+
+                                                            if (isEditing) {
+                                                                return (
+                                                                    <tr key={log.id} className="bg-zinc-900/60">
+                                                                        <td className="py-2 pr-3">
+                                                                            <input type="date" className="bg-zinc-800 border border-zinc-600 rounded px-1.5 py-1 text-white text-xs w-32"
+                                                                                value={editingLogField.date} onChange={e => setEditingLogField(f => ({...f, date: e.target.value}))}/>
+                                                                        </td>
+                                                                        <td className="py-2 pr-3 text-zinc-300">{emp?.name ?? '—'}</td>
+                                                                        <td className="py-2 pr-3">
+                                                                            <div className="flex items-center gap-1">
+                                                                                <input type="time" className="bg-zinc-800 border border-zinc-600 rounded px-1 py-1 text-white text-xs w-20"
+                                                                                    value={editingLogField.startTime} onChange={e => setEditingLogField(f => ({...f, startTime: e.target.value}))}/>
+                                                                                <span className="text-zinc-600">–</span>
+                                                                                <input type="time" className="bg-zinc-800 border border-zinc-600 rounded px-1 py-1 text-white text-xs w-20"
+                                                                                    value={editingLogField.endTime} onChange={e => setEditingLogField(f => ({...f, endTime: e.target.value}))}/>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="py-2 pr-3 text-zinc-400 text-xs">{log.netHours.toFixed(1)} s</td>
+                                                                        <td className="py-2 pr-3">
+                                                                            <div className="relative">
+                                                                                <input
+                                                                                    className="bg-zinc-800 border border-purple-600 rounded px-1.5 py-1 text-white text-xs w-36"
+                                                                                    list={`loc-list-${log.id}`}
+                                                                                    value={editingLogField.location}
+                                                                                    onChange={e => setEditingLogField(f => ({...f, location: e.target.value}))}
+                                                                                    placeholder="İş yeri..."
+                                                                                />
+                                                                                <datalist id={`loc-list-${log.id}`}>
+                                                                                    {locations.map(l => <option key={l.id} value={l.name}/>)}
+                                                                                </datalist>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="py-2">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <input className="bg-zinc-800 border border-zinc-600 rounded px-1.5 py-1 text-white text-xs w-40"
+                                                                                    value={editingLogField.description} onChange={e => setEditingLogField(f => ({...f, description: e.target.value}))}
+                                                                                    placeholder="Açıklama..."/>
+                                                                                <button onClick={saveEdit} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-white"><CheckIcon className="w-3.5 h-3.5"/></button>
+                                                                                <button onClick={() => setEditingLogId(null)} className="p-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-white"><XMarkIcon className="w-3.5 h-3.5"/></button>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            }
+
+                                                            return (
+                                                                <tr key={log.id} onClick={startEdit} className={`cursor-pointer group transition-colors ${!hasLocation ? 'bg-yellow-950/20 hover:bg-yellow-950/40' : 'hover:bg-zinc-800/40'}`}>
+                                                                    <td className="py-2.5 pr-3 text-zinc-300 text-xs whitespace-nowrap">
+                                                                        {new Date(log.date + 'T00:00:00').toLocaleDateString('tr-TR', { day:'numeric', month:'short', year:'2-digit' })}
+                                                                    </td>
+                                                                    <td className="py-2.5 pr-3">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[9px] font-bold text-zinc-300 shrink-0">{(emp?.name ?? '?').charAt(0).toUpperCase()}</div>
+                                                                            <span className="text-zinc-200 text-xs">{emp?.name ?? '—'}</span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-2.5 pr-3 text-zinc-400 text-xs whitespace-nowrap">{log.startTime} – {log.endTime}</td>
+                                                                    <td className="py-2.5 pr-3 text-blue-400 font-mono text-xs">{log.netHours.toFixed(1)} s</td>
+                                                                    <td className="py-2.5 pr-3">
+                                                                        {hasLocation
+                                                                            ? <span className="text-xs bg-purple-900/30 text-purple-300 border border-purple-800/50 px-2 py-0.5 rounded-full">{log.location}</span>
+                                                                            : <span className="text-xs text-yellow-600 italic flex items-center gap-1"><PencilSquareIcon className="w-3 h-3"/>Eksik — tıkla</span>
+                                                                        }
+                                                                    </td>
+                                                                    <td className="py-2.5 text-zinc-500 text-xs truncate max-w-[140px]">{log.description || <span className="italic text-zinc-700">—</span>}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
-                
+
                 {/* ... (Settings and Tasks unchanged) ... */}
                 {/* ... (Calendar View unchanged) ... */}
 
