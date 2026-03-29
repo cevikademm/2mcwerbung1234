@@ -126,6 +126,7 @@ interface WorkLog {
   endTime: string;
   breakMinutes: number;
   netHours: number;
+  location: string;
   description: string;
   status?: 'pending' | 'approved' | 'rejected';
 }
@@ -401,6 +402,7 @@ const App: React.FC = () => {
       startTime: '09:00',
       endTime: '17:00',
       breakMinutes: 30,
+      location: '',
       description: ''
   });
   
@@ -668,7 +670,7 @@ const App: React.FC = () => {
   const handleSaveHourEntry = async () => {
       const empId = currentUser?.role === 'admin' ? hourEntry.employeeId : currentUser?.id;
       
-      if (empId && calculatedNetHours && hourEntry.description.trim()) {
+      if (empId && calculatedNetHours && hourEntry.location.trim() && hourEntry.description.trim()) {
           try {
               const logData = {
                   employeeId: empId,
@@ -677,11 +679,12 @@ const App: React.FC = () => {
                   endTime: hourEntry.endTime,
                   breakMinutes: hourEntry.breakMinutes,
                   netHours: parseFloat(calculatedNetHours as string),
+                  location: hourEntry.location,
                   description: hourEntry.description
               };
 
               await saveWorkLog(logData);
-              setHourEntry(prev => ({...prev, description: ''}));
+              setHourEntry(prev => ({...prev, location: '', description: ''}));
               
               if (currentUser?.role === 'employee') {
                   alert("Saat girişi onaya gönderildi.");
@@ -1819,10 +1822,19 @@ const App: React.FC = () => {
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className="text-xs text-zinc-400 block mb-1">Açıklama</label>
-                                                    <input 
+                                                    <label className="text-xs text-zinc-400 block mb-1">Çalışma Yeri</label>
+                                                    <input
                                                         className="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white"
-                                                        placeholder="Proje A, Mesai vb."
+                                                        placeholder="Ör: Maide, Restaurant XY..."
+                                                        value={hourEntry.location}
+                                                        onChange={e => setHourEntry({...hourEntry, location: e.target.value})}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs text-zinc-400 block mb-1">Açıklama</label>
+                                                    <input
+                                                        className="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white"
+                                                        placeholder="Mutfak kurma, silikon çekme, elektrik bağlama vb."
                                                         value={hourEntry.description}
                                                         onChange={e => setHourEntry({...hourEntry, description: e.target.value})}
                                                     />
@@ -1913,6 +1925,7 @@ const App: React.FC = () => {
                                                                                                      <span className="text-zinc-700">|</span> 
                                                                                                      Mola: {log.breakMinutes}dk
                                                                                                  </span>
+                                                                                                 {log.location && <span className="text-zinc-500 text-[9px]">📍 {log.location}</span>}
                                                                                                  <span className="text-zinc-300 font-medium">{log.description || 'Çalışma'}</span>
                                                                                              </div>
                                                                                              <div className="flex items-center gap-3">

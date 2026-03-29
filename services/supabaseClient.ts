@@ -78,7 +78,7 @@ export async function loginUser(email: string, password: string): Promise<{ succ
     // 1. Check if Admin
     if (ADMIN_EMAILS.includes(email)) {
       const settings = await fetchAppSettings();
-      const adminPass = settings?.admin_password || '123';
+      const adminPass = settings?.admin_password || '123456';
       
       if (password === adminPass) {
         await logAction('LOGIN', 'Auth', { email, role: 'admin' }, 'SUCCESS', undefined, email);
@@ -163,12 +163,12 @@ export async function fetchAppSettings() {
           total_credits: 100,
           salary_approved: '0.00',
           salary_pending_count: 0,
-          admin_password: '123'
+          admin_password: '123456'
         }])
         .select()
         .single();
-      
-      if (insertError) return { total_credits: 100, salary_approved: '0.00', salary_pending_count: 0, admin_password: '123' };
+
+      if (insertError) return { total_credits: 100, salary_approved: '0.00', salary_pending_count: 0, admin_password: '123456' };
       return newData;
     }
 
@@ -357,7 +357,7 @@ export async function fetchEmployees() {
 export async function saveEmployee(employee: any) {
   try {
       const { id, ...rest } = employee; 
-      const payload = { ...rest, password: '123' }; 
+      const payload = { ...rest, password: '123456' };
       const { data, error } = await supabase.from('employees').insert([payload]).select().single();
       
       if (error) {
@@ -449,6 +449,7 @@ export async function saveWorkLog(log: any) {
           end_time: log.endTime,
           break_minutes: log.breakMinutes,
           net_hours: log.netHours,
+          location: log.location,
           description: log.description,
           status: 'pending'
       };
