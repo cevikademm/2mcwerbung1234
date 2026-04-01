@@ -1285,7 +1285,6 @@ const App: React.FC = () => {
                                 
                                 <div className="flex-1 space-y-3">
                                     {tasks
-                                        .filter(t => currentUser?.role === 'admin' || t.employeeId === currentUser?.id)
                                         .filter(t => t.status !== 'completed') // Show only active tasks
                                         .sort((a,b) => {
                                             const dA = new Date(a.dueDate).getTime();
@@ -1313,7 +1312,7 @@ const App: React.FC = () => {
                                             </div>
                                         ))
                                     }
-                                    {tasks.filter(t => currentUser?.role === 'admin' || t.employeeId === currentUser?.id).filter(t => t.status !== 'completed').length === 0 && (
+                                    {tasks.filter(t => t.status !== 'completed').length === 0 && (
                                         <div className="text-center text-zinc-500 py-6 text-sm">Bekleyen görev yok.</div>
                                     )}
                                 </div>
@@ -1581,7 +1580,7 @@ const App: React.FC = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {(() => {
-                                const visibleTasks = tasks.filter(t => currentUser?.role === 'admin' || t.employeeId === currentUser?.id);
+                                const visibleTasks = tasks; // Tüm kullanıcılar bütün görevleri görebilir
                                 const sortedTasks = [...visibleTasks].sort((a, b) => {
                                     if (a.status === 'completed' && b.status !== 'completed') return 1;
                                     if (a.status !== 'completed' && b.status === 'completed') return -1;
