@@ -994,8 +994,19 @@ const App: React.FC = () => {
           const taskPayload = { ...taskForm, progress };
 
           if (editingTask) {
-               await updateTask(editingTask.id, taskPayload);
-               setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...taskPayload, ...mapTaskToApp({id:editingTask.id, ...taskPayload}) } : t));
+               const dbPayload = {
+                   title: taskPayload.title,
+                   description: taskPayload.description,
+                   employee_id: taskPayload.employeeId,
+                   start_date: taskPayload.startDate,
+                   due_date: taskPayload.dueDate,
+                   priority: taskPayload.priority,
+                   status: taskPayload.status || 'pending',
+                   progress: taskPayload.progress,
+                   steps: taskPayload.steps || []
+               };
+               await updateTask(editingTask.id, dbPayload);
+               setTasks(prev => prev.map(t => t.id === editingTask.id ? mapTaskToApp({ ...t, id: editingTask.id, ...dbPayload }) : t));
           } else {
                const saved = await saveTask(taskPayload);
                if(saved) setTasks(prev => [...prev, mapTaskToApp(saved)]);
